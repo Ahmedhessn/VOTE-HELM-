@@ -1,0 +1,89 @@
+# Default values for vote-app
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  namespace: default
+
+# PostgreSQL Configuration
+postgres:
+  enabled: true
+  image:
+    repository: 01061875164/postgres15-alpine
+    tag: v3
+  replicas: 1
+  port: 5432
+  database: postgres
+  storage:
+    size: 1Gi
+    accessMode: ReadWriteOnce
+  secret:
+    user: postgres
+    password: postgres
+
+# Redis Configuration
+redis:
+  enabled: true
+  image:
+    repository: 01061875164/redis
+    tag: v1
+  replicas: 1
+  port: 6379
+
+# Vote Service Configuration
+vote:
+  enabled: true
+  image:
+    repository: 01061875164/vote-app
+    tag: v1
+  replicas: 1
+  port: 80
+  service:
+    type: NodePort
+    nodePort: 30080
+  config:
+    optionA: "Cats"
+    optionB: "Dogs"
+
+# Result Service Configuration
+result:
+  enabled: true
+  image:
+    repository: 01061875164/result
+    tag: v3
+  replicas: 1
+  port: 4000
+  service:
+    type: NodePort
+    nodePort: 30081
+
+# Worker Configuration
+worker:
+  enabled: true
+  image:
+    repository: 01061875164/worker
+    tag: v2
+  replicas: 1
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: vote.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: vote
+          port: 80
+        - path: /result
+          pathType: Prefix
+          service: result
+          port: 4000
+  tls: []
+    # - secretName: vote-app-tls
+    #   hosts:
+    #     - vote.local
+

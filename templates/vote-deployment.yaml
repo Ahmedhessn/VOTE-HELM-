@@ -1,0 +1,40 @@
+{{- if .Values.vote.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vote
+  labels:
+    app: vote
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.vote.replicas }}
+  selector:
+    matchLabels:
+      app: vote
+  template:
+    metadata:
+      labels:
+        app: vote
+        chart: {{ include "vote-app.chart" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: vote
+          image: "{{ .Values.vote.image.repository }}:{{ .Values.vote.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.vote.port }}
+          env:
+            - name: OPTION_A
+              valueFrom:
+                configMapKeyRef:
+                  name: vote-config
+                  key: OPTION_A
+            - name: OPTION_B
+              valueFrom:
+                configMapKeyRef:
+                  name: vote-config
+                  key: OPTION_B
+{{- end }}
+

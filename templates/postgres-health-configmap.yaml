@@ -1,0 +1,17 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-health
+  labels:
+    app: {{ include "vote-app.name" . }}
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  healthcheck.sh: |
+    #!/bin/sh
+    pg_isready -U postgres -d postgres -h 127.0.0.1
+    exit $?
+{{- end }}
+

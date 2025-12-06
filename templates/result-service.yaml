@@ -1,0 +1,22 @@
+{{- if .Values.result.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: result
+  labels:
+    app: result
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: {{ .Values.result.service.type }}
+  selector:
+    app: result
+  ports:
+    - port: {{ .Values.result.port }}
+      targetPort: {{ .Values.result.port }}
+      {{- if eq .Values.result.service.type "NodePort" }}
+      nodePort: {{ .Values.result.service.nodePort }}
+      {{- end }}
+{{- end }}
+

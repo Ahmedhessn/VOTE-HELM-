@@ -1,0 +1,47 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.redis.replicas }}
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        chart: {{ include "vote-app.chart" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.redis.port }}
+          livenessProbe:
+            exec:
+              command: ["sh", "/healthcheck.sh"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["sh", "/healthcheck.sh"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: healthcheck
+              mountPath: /healthcheck.sh
+              subPath: healthcheck.sh
+      volumes:
+        - name: healthcheck
+          configMap:
+            name: redis-health
+{{- end }}
+

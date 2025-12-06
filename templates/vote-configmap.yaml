@@ -1,0 +1,15 @@
+{{- if .Values.vote.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vote-config
+  labels:
+    app: {{ include "vote-app.name" . }}
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  OPTION_A: {{ .Values.vote.config.optionA | quote }}
+  OPTION_B: {{ .Values.vote.config.optionB | quote }}
+{{- end }}
+

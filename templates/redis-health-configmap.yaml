@@ -1,0 +1,17 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-health
+  labels:
+    app: {{ include "vote-app.name" . }}
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+data:
+  healthcheck.sh: |
+    #!/bin/sh
+    redis-cli ping
+    exit $?
+{{- end }}
+

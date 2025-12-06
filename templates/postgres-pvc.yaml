@@ -1,0 +1,18 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  labels:
+    app: {{ include "vote-app.name" . }}
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  accessModes:
+    - {{ .Values.postgres.storage.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.postgres.storage.size }}
+{{- end }}
+

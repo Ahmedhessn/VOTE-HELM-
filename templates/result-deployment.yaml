@@ -1,0 +1,32 @@
+{{- if .Values.result.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: result
+  labels:
+    app: result
+    chart: {{ include "vote-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.result.replicas }}
+  selector:
+    matchLabels:
+      app: result
+  template:
+    metadata:
+      labels:
+        app: result
+        chart: {{ include "vote-app.chart" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: result
+          image: "{{ .Values.result.image.repository }}:{{ .Values.result.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.result.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.result.port | quote }}
+{{- end }}
+
