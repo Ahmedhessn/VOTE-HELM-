@@ -1,0 +1,172 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  HELM_VERSION: "3.12.0"
+  KUBERNETES_VERSION: "1.28.0"
+
+jobs:
+  lint:
+    name: Lint Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Lint Helm Chart
+        run: |
+          helm lint .
+          helm template . | kubectl --dry-run=client -f - validate
+
+  test:
+    name: Test Helm Chart
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install KinD
+        uses: helm/kind-action@v1.8.0
+        with:
+          install_kubectl: true
+
+      - name: Create Kubernetes cluster
+        run: |
+          kind create cluster --wait 5m
+
+      - name: Test Helm Chart Installation
+        run: |
+          helm install vote-app-test . --wait --timeout 5m
+          helm test vote-app-test || true
+
+      - name: Test Helm Chart Upgrade
+        run: |
+          helm upgrade vote-app-test . --wait --timeout 5m
+
+      - name: Cleanup
+        if: always()
+        run: |
+          helm uninstall vote-app-test || true
+          kind delete cluster
+
+  build-and-push:
+    name: Build and Push Chart
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Package Helm Chart
+        run: |
+          helm package .
+          CHART_VERSION=$(helm show chart . | grep '^version:' | awk '{print $2}')
+          echo "CHART_VERSION=$CHART_VERSION" >> $GITHUB_ENV
+
+      - name: Create Helm Chart Index
+        run: |
+          helm repo index . --url https://github.com/${{ github.repository }}/releases/download/v${{ env.CHART_VERSION }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.tgz
+            index.yaml
+          tag_name: v${{ env.CHART_VERSION }}
+          name: Release v${{ env.CHART_VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-to-aks:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://vote.local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} --name ${{ secrets.AKS_CLUSTER_NAME }} --overwrite-existing
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace ${{ secrets.K8S_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install vote-app . \
+            --namespace ${{ secrets.K8S_NAMESPACE }} \
+            --create-namespace \
+            --wait \
+            --timeout 5m \
+            --set postgres.image.repository=${{ secrets.POSTGRES_IMAGE_REPO }} \
+            --set postgres.image.tag=${{ secrets.POSTGRES_IMAGE_TAG }} \
+            --set redis.image.repository=${{ secrets.REDIS_IMAGE_REPO }} \
+            --set redis.image.tag=${{ secrets.REDIS_IMAGE_TAG }} \
+            --set vote.image.repository=${{ secrets.VOTE_IMAGE_REPO }} \
+            --set vote.image.tag=${{ secrets.VOTE_IMAGE_TAG }} \
+            --set result.image.repository=${{ secrets.RESULT_IMAGE_REPO }} \
+            --set result.image.tag=${{ secrets.RESULT_IMAGE_TAG }} \
+            --set worker.image.repository=${{ secrets.WORKER_IMAGE_REPO }} \
+            --set worker.image.tag=${{ secrets.WORKER_IMAGE_TAG }}
+
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -n ${{ secrets.K8S_NAMESPACE }}
+          kubectl get svc -n ${{ secrets.K8S_NAMESPACE }}
+          kubectl get ingress -n ${{ secrets.K8S_NAMESPACE }}
+

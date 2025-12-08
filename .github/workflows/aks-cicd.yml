@@ -1,0 +1,186 @@
+name: AKS CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  HELM_VERSION: "3.12.0"
+  KUBERNETES_VERSION: "1.28.0"
+
+jobs:
+  validate:
+    name: Validate Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Validate Helm Chart
+        run: |
+          helm lint .
+          helm template . -f ./aks/values-staging.yaml | kubectl --dry-run=client -f - validate
+          helm template . -f ./aks/values-production.yaml | kubectl --dry-run=client -f - validate
+
+  build-chart:
+    name: Build Helm Chart
+    runs-on: ubuntu-latest
+    needs: validate
+    outputs:
+      chart-version: ${{ steps.version.outputs.chart-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Get Chart Version
+        id: version
+        run: |
+          CHART_VERSION=$(helm show chart . | grep '^version:' | awk '{print $2}')
+          echo "chart-version=$CHART_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package Chart
+        run: |
+          helm package .
+          mkdir -p chart-artifacts
+          mv *.tgz chart-artifacts/
+
+      - name: Upload Chart Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: helm-chart
+          path: chart-artifacts/*.tgz
+          retention-days: 7
+
+  deploy-staging:
+    name: Deploy to AKS Staging
+    runs-on: ubuntu-latest
+    needs: build-chart
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Chart Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: helm-chart
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials --resource-group ${{ secrets.AKS_STAGING_RESOURCE_GROUP }} --name ${{ secrets.AKS_STAGING_CLUSTER_NAME }} --overwrite-existing
+
+      - name: Deploy to Staging
+        run: |
+          CHART_FILE=$(ls *.tgz | head -n 1)
+          helm upgrade --install vote-app-staging $CHART_FILE \
+            --namespace staging \
+            --create-namespace \
+            --wait \
+            --timeout 10m \
+            -f ./aks/values-staging.yaml \
+            --atomic
+
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -n staging
+          kubectl get svc -n staging
+          kubectl get ingress -n staging
+
+  deploy-production:
+    name: Deploy to AKS Production
+    runs-on: ubuntu-latest
+    needs: build-chart
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Chart Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: helm-chart
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        version: ${{ env.KUBERNETES_VERSION }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials --resource-group ${{ secrets.AKS_PRODUCTION_RESOURCE_GROUP }} --name ${{ secrets.AKS_PRODUCTION_CLUSTER_NAME }} --overwrite-existing
+
+      - name: Deploy to Production
+        run: |
+          CHART_FILE=$(ls *.tgz | head -n 1)
+          helm upgrade --install vote-app-production $CHART_FILE \
+            --namespace production \
+            --create-namespace \
+            --wait \
+            --timeout 10m \
+            -f ./aks/values-production.yaml \
+            --atomic
+
+      - name: Verify Deployment
+        run: |
+          kubectl get pods -n production
+          kubectl get svc -n production
+          kubectl get ingress -n production
+
+      - name: Run Smoke Tests
+        run: |
+          # Wait for services to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/vote-app-vote -n production
+          kubectl wait --for=condition=available --timeout=300s deployment/vote-app-result -n production
+

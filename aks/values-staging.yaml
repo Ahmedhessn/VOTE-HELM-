@@ -1,0 +1,78 @@
+# AKS Staging Environment Values
+global:
+  namespace: staging
+
+postgres:
+  replicas: 1
+  storage:
+    size: 2Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+redis:
+  replicas: 1
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+vote:
+  replicas: 2
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+result:
+  replicas: 2
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+  hosts:
+    - host: vote-staging.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: vote
+          port: 80
+        - path: /result
+          pathType: Prefix
+          service: result
+          port: 4000
+  tls:
+    - secretName: vote-app-staging-tls
+      hosts:
+        - vote-staging.example.com
+
