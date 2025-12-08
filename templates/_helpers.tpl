@@ -48,3 +48,4 @@ app.kubernetes.io/name: {{ include "vote-app.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+

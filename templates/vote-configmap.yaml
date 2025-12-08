@@ -13,3 +13,4 @@ data:
   OPTION_B: {{ .Values.vote.config.optionB | quote }}
 {{- end }}
 
+

@@ -25,3 +25,4 @@ spec:
           image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
 {{- end }}
 
+
