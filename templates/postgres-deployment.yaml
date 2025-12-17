@@ -1,66 +1,103 @@
-{{- if .Values.postgres.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: db
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    meta.helm.sh/release-name: vote-staging
+    meta.helm.sh/release-namespace: test
+  creationTimestamp: "2025-12-14T13:39:31Z"
+  generation: 1
   labels:
     app: db
-    chart: {{ include "vote-app.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
+    app.kubernetes.io/managed-by: Helm
+    chart: vote-app-1.0.0
+    heritage: Helm
+    release: vote-staging
+  name: db
+  namespace: test
+  resourceVersion: "483958"
+  uid: 79d08a61-5fd9-4f94-947f-7e1ba0cc99bf
 spec:
-  replicas: {{ .Values.postgres.replicas }}
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app: db
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
   template:
     metadata:
+      creationTimestamp: null
       labels:
         app: db
-        chart: {{ include "vote-app.chart" . }}
-        release: {{ .Release.Name }}
+        chart: vote-app-1.0.0
+        release: vote-staging
     spec:
       containers:
-        - name: postgres
-          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
-          ports:
-            - containerPort: {{ .Values.postgres.port }}
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: db-secret
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: db-secret
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: {{ .Values.postgres.database | quote }}
-          volumeMounts:
-            - name: data
-              mountPath: /var/lib/postgresql/data
-            - name: healthcheck
-              mountPath: /healthcheck.sh
-              subPath: healthcheck.sh
-          livenessProbe:
-            exec:
-              command: ["sh", "/healthcheck.sh"]
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          readinessProbe:
-            exec:
-              command: ["sh", "/healthcheck.sh"]
-            initialDelaySeconds: 10
-            periodSeconds: 5
+      - env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_USER
+              name: db-secret
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_PASSWORD
+              name: db-secret
+        - name: POSTGRES_DB
+          value: postgres
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        image: 01061875164/postgres15-alpine:v3
+        imagePullPolicy: IfNotPresent
+        name: postgres
+        ports:
+        - containerPort: 5432
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: data
+        - mountPath: /healthcheck.sh
+          name: healthcheck
+          subPath: healthcheck.sh
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
       volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: postgres-pvc
-        - name: healthcheck
-          configMap:
-            name: postgres-health
-{{- end }}
-
+      - name: data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - configMap:
+          defaultMode: 420
+          name: postgres-health
+        name: healthcheck
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2025-12-14T13:39:31Z"
+    lastUpdateTime: "2025-12-14T13:39:52Z"
+    message: ReplicaSet "db-66cc745646" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  - lastTransitionTime: "2025-12-15T15:10:05Z"
+    lastUpdateTime: "2025-12-15T15:10:05Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
 
